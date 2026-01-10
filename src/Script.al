@@ -30,6 +30,7 @@ page 66000 "sal3 Script"
         {
             actionref("Run Lexer Promoted"; "Run Lexer") { }
             actionref("Run Parser Promoted"; "Run Parser") { }
+            actionref("Parse & Format Promoted"; "Parse & Format") { }
         }
         area(Processing)
         {
@@ -51,6 +52,16 @@ page 66000 "sal3 Script"
                 trigger OnAction()
                 begin
                     RunParser();
+                end;
+            }
+            action("Parse & Format")
+            {
+                Caption = 'Parse & Format';
+                Image = StyleSheet;
+
+                trigger OnAction()
+                begin
+                    ParseAndFormat();
                 end;
             }
         }
@@ -93,6 +104,25 @@ page 66000 "sal3 Script"
 
         foreach Form in Forms do
             Builder.AppendLine(Form.ToString());
+
+        Message(Builder.ToText());
+    end;
+
+    local procedure ParseAndFormat()
+    var
+        Parser: Codeunit "sal3 Parser";
+        Formatter: Codeunit "sal3 Formatter";
+        Forms: List of [Interface "sal3 Form"];
+        Form: Interface "sal3 Form";
+
+        Builder: TextBuilder;
+    begin
+        Forms := Parser.Parse(Script);
+
+        foreach Form in Forms do begin
+            Formatter.FormatForm(Form, Builder);
+            Builder.AppendLine();
+        end;
 
         Message(Builder.ToText());
     end;

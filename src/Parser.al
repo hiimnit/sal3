@@ -96,22 +96,36 @@ interface "sal3 Form"
     procedure ToString(): Text;
 }
 
-interface "sal3 Form Cell" { }
+interface "sal3 Form Cell"
+{
+    procedure Car(): Interface "sal3 Form";
+    procedure Cdr(): Interface "sal3 Form";
+}
 
 codeunit 66020 "sal3 Cell" implements "sal3 Form", "sal3 Form Cell"
 {
     var
-        Car, Cdr : Interface "sal3 Form";
+        CarForm, CdrForm : Interface "sal3 Form";
 
     procedure Init(InCar: Interface "sal3 Form"; InCdr: Interface "sal3 Form")
     begin
-        Car := InCar;
-        Cdr := InCdr;
+        CarForm := InCar;
+        CdrForm := InCdr;
     end;
 
     procedure ToString(): Text;
     begin
-        exit(StrSubstNo('(%1 . %2)', Car.ToString(), Cdr.ToString()));
+        exit(StrSubstNo('(%1 . %2)', CarForm.ToString(), CdrForm.ToString()));
+    end;
+
+    procedure Car(): Interface "sal3 Form"
+    begin
+        exit(CarForm);
+    end;
+
+    procedure Cdr(): Interface "sal3 Form"
+    begin
+        exit(CdrForm);
     end;
 }
 

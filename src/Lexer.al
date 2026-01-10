@@ -1,0 +1,355 @@
+codeunit 66000 "sal3 Lexer"
+{
+    var
+        Lexemes: Codeunit "sal3 Lexemes";
+        Text: Text;
+        Position: Integer;
+        asdf: Dictionary of [Integer, Codeunit "sal3 Lexer"];
+
+    procedure Init(InText: Text)
+    begin
+        Text := InText;
+        Position := 0;
+        HasPeekedLexeme := false;
+    end;
+
+    procedure GetPosition(): Integer
+    begin
+        exit(Position);
+    end;
+
+    procedure Next(): Interface "sal3 Lexeme"
+    var
+        c: Char;
+    begin
+        if HasPeekedLexeme then begin
+            HasPeekedLexeme := false;
+            exit(PeekedLexeme);
+        end;
+
+        repeat
+            c := NextChar();
+            if c = 0 then
+                exit(Lexemes.EOS);
+        until not IsWhiteSpace(c);
+
+        case true of
+            // FIXME comments
+            c = '(':
+                exit(Lexemes.OpenParenthesis);
+            c = ')':
+                exit(Lexemes.CloseParenthesis);
+            c = '''':
+                exit(Lexemes.Quote);
+            // FIXME negative numbers
+            // FIXME numbers starting with .
+            // FIXME "." operator?
+            c in ['0' .. '9']:
+                exit(ParseNumberLiteral(c));
+            c = '"':
+                exit(ParseStringLiteral());
+            else
+                exit(ParseSymbol(c));
+        end;
+    end;
+
+    local procedure NextChar(): Char
+    begin
+        if Position >= StrLen(Text) then
+            exit(0);
+
+        Position += 1;
+        exit(Text[Position]);
+    end;
+
+    local procedure PushChar()
+    begin
+        Position -= 1;
+    end;
+
+    local procedure IsWhiteSpace(c: Char): Boolean
+    begin
+        // space, tab, lf, cr, tab, nonbreaking space
+        exit(c in [' ', 9, 10, 11, 13, 160]);
+    end;
+
+    local procedure SymbolSeparator(c: Char): Boolean
+    begin
+        exit(c in ['(', ')', '''', '"']);
+    end;
+
+    local procedure ParseNumberLiteral(c: Char): Interface "sal3 Lexeme"
+    var
+        Number: Decimal;
+        SymbolBuilder: TextBuilder;
+        DecimalSeparatorFound: Boolean;
+        DecimalPlaces: Integer;
+    begin
+        Number := c - '0';
+        SymbolBuilder.Append(c);
+
+        while true do begin
+            c := NextChar();
+
+            if c in ['0' .. '9'] then begin
+                SymbolBuilder.Append(c);
+
+                if DecimalSeparatorFound then begin
+                    Number := Number + (c - '0') / Power(10, DecimalPlaces);
+                    DecimalPlaces += 1;
+                end else
+                    Number := Number * 10 + c - '0';
+
+                continue;
+            end;
+
+            if c = '.' then begin
+                SymbolBuilder.Append(c);
+
+                if DecimalSeparatorFound then
+                    exit(ParseSymbol(SymbolBuilder));
+
+                DecimalSeparatorFound := true;
+                DecimalPlaces := 1;
+            end;
+
+            if c in ['(', ')', '''', '"'] then begin
+                PushChar();
+                break;
+            end;
+            if c = 0 then
+                break;
+            if IsWhiteSpace(c) then
+                break;
+        end;
+
+        exit(Lexemes.Number(Number));
+    end;
+
+    local procedure ParseStringLiteral(): Codeunit "sal3 String"
+    var
+        StringBuilder: TextBuilder;
+        c: Char;
+        Escaping: Boolean;
+    begin
+        while true do begin
+            c := NextChar();
+            if c = 0 then
+                Error('Unexpected EOS in string literal.');
+
+            if not Escaping then begin
+                if c = '\' then begin
+                    Escaping := true;
+                    continue;
+                end;
+
+                if c = '"' then
+                    break;
+            end;
+
+            StringBuilder.Append(c);
+            Escaping := false;
+        end;
+
+        exit(Lexemes.String(StringBuilder.ToText()));
+    end;
+
+    local procedure ParseSymbol(c: Char): Codeunit "sal3 Symbol"
+    var
+        SymbolBuilder: TextBuilder;
+    begin
+        SymbolBuilder.Append(c);
+        exit(ParseSymbol(SymbolBuilder));
+    end;
+
+    local procedure ParseSymbol(SymbolBuilder: TextBuilder): Codeunit "sal3 Symbol"
+    var
+        c: Char;
+    begin
+        while true do begin
+            c := NextChar();
+
+            if c in ['(', ')', '''', '"'] then begin
+                PushChar();
+                break;
+            end;
+            if c = 0 then
+                break;
+            if IsWhiteSpace(c) then
+                break;
+
+            SymbolBuilder.Append(c);
+        end;
+
+        exit(Lexemes.Symbol(SymbolBuilder.ToText()));
+    end;
+
+    var
+        PeekedLexeme: Interface "sal3 Lexeme";
+        HasPeekedLexeme: Boolean;
+
+    procedure Peek(): Interface "sal3 Lexeme"
+    begin
+        if HasPeekedLexeme then
+            exit(PeekedLexeme);
+
+        PeekedLexeme := Next();
+        HasPeekedLexeme := true;
+
+        exit(PeekedLexeme);
+    end;
+}
+
+codeunit 66001 "sal3 Lexemes"
+{
+    procedure EOS(): Codeunit "sal3 EOS"
+    begin
+    end;
+
+    procedure OpenParenthesis(): Codeunit "sal3 Open Parenthesis"
+    begin
+    end;
+
+    procedure CloseParenthesis(): Codeunit "sal3 Close Parenthesis"
+    begin
+    end;
+
+    procedure Quote(): Codeunit "sal3 Quote"
+    begin
+    end;
+
+    procedure Dot(): Codeunit "sal3 Dot"
+    begin
+    end;
+
+    procedure Number(InNumber: Decimal) Lexeme: Codeunit "sal3 Number"
+    begin
+        Lexeme.Init(InNumber);
+    end;
+
+    procedure String(InString: Text) Lexeme: Codeunit "sal3 String"
+    begin
+        Lexeme.Init(InString);
+    end;
+
+    procedure Symbol(InSymbol: Text) Lexeme: Codeunit "sal3 Symbol"
+    begin
+        Lexeme.Init(InSymbol);
+    end;
+}
+
+interface "sal3 Lexeme"
+{
+    procedure ToString(): Text
+}
+
+interface "sal3 Lexeme EOS" { }
+
+codeunit 66002 "sal3 EOS" implements "sal3 Lexeme", "sal3 Lexeme EOS"
+{
+    SingleInstance = true;
+
+    procedure ToString(): Text
+    begin
+        exit('<EOS>');
+    end;
+}
+
+interface "sal3 Lexeme Open Paren" { }
+
+codeunit 66003 "sal3 Open Parenthesis" implements "sal3 Lexeme", "sal3 Lexeme Open Paren"
+{
+    SingleInstance = true;
+
+    procedure ToString(): Text
+    begin
+        exit('<(>');
+    end;
+}
+interface "sal3 Lexeme Close Paren" { }
+
+codeunit 66004 "sal3 Close Parenthesis" implements "sal3 Lexeme", "sal3 Lexeme Close Paren"
+{
+    SingleInstance = true;
+
+    procedure ToString(): Text
+    begin
+        exit('<)>');
+    end;
+}
+
+interface "sal3 Lexeme Quote" { }
+
+codeunit 66005 "sal3 Quote" implements "sal3 Lexeme", "sal3 Lexeme Quote"
+{
+    SingleInstance = true;
+
+    procedure ToString(): Text
+    begin
+        exit('<''>');
+    end;
+}
+
+interface "sal3 Lexeme Number" { }
+
+codeunit 66006 "sal3 Number" implements "sal3 Lexeme", "sal3 Lexeme Number", "sal3 Form"
+{
+    var
+        Number: Decimal;
+
+    procedure Init(InNumber: Decimal)
+    begin
+        Number := InNumber;
+    end;
+
+    procedure ToString(): Text
+    begin
+        exit(StrSubstNo('<Number="%1">', Number));
+    end;
+}
+
+interface "sal3 Lexeme String" { }
+
+codeunit 66007 "sal3 String" implements "sal3 Lexeme", "sal3 Lexeme String", "sal3 Form"
+{
+    var
+        String: Text;
+
+    procedure Init(InString: Text)
+    begin
+        String := InString;
+    end;
+
+    procedure ToString(): Text
+    begin
+        exit(StrSubstNo('<String="%1">', String));
+    end;
+}
+
+interface "sal3 Lexeme Symbol" { }
+
+codeunit 66008 "sal3 Symbol" implements "sal3 Lexeme", "sal3 Lexeme Symbol", "sal3 Form"
+{
+    var
+        Symbol: Text;
+
+    procedure Init(InSymbol: Text)
+    begin
+        Symbol := InSymbol;
+    end;
+
+    procedure ToString(): Text
+    begin
+        exit(StrSubstNo('<Symbol="%1">', Symbol));
+    end;
+}
+
+interface "sal3 Lexeme Dot" { }
+
+codeunit 66009 "sal3 Dot" implements "sal3 Lexeme Dot"
+{
+    procedure ToString(): Text
+    begin
+        exit('<.>');
+    end;
+}

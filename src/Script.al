@@ -31,6 +31,7 @@ page 66000 "sal3 Script"
             actionref("Run Lexer Promoted"; "Run Lexer") { }
             actionref("Run Parser Promoted"; "Run Parser") { }
             actionref("Parse & Format Promoted"; "Parse & Format") { }
+            actionref("Execute Script Promoted"; "Execute Script") { }
         }
         area(Processing)
         {
@@ -62,6 +63,16 @@ page 66000 "sal3 Script"
                 trigger OnAction()
                 begin
                     ParseAndFormat();
+                end;
+            }
+            action("Execute Script")
+            {
+                Caption = 'Execute Script';
+                Image = Start;
+
+                trigger OnAction()
+                begin
+                    Execute();
                 end;
             }
         }
@@ -126,5 +137,18 @@ page 66000 "sal3 Script"
 
         Message(Builder.ToText());
     end;
-}
 
+    local procedure Execute()
+    var
+        Parser: Codeunit "sal3 Parser";
+        Runner: Codeunit "sal3 Runner";
+        Forms: List of [Interface "sal3 Form"];
+        Result: Interface "sal3 Form";
+    begin
+        Forms := Parser.Parse(Script);
+
+        Result := Runner.EvalForms(Forms);
+
+        Message(Result.ToString());
+    end;
+}

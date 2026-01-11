@@ -41,11 +41,12 @@ codeunit 66000 "sal3 Lexer"
                 exit(Lexemes.CloseParenthesis);
             c = '''':
                 exit(Lexemes.Quote);
-            // FIXME negative numbers
-            // FIXME numbers starting with .
-            // FIXME "." operator?
+            c = '.':
+                exit(ParseDot());
+            c = '-':
+                exit(ParseDash());
             c in ['0' .. '9']:
-                exit(ParseNumberLiteral(c));
+                exit(ParseNumberLiteral(c, true, false));
             c = '"':
                 exit(ParseStringLiteral());
             else
@@ -73,16 +74,83 @@ codeunit 66000 "sal3 Lexer"
         exit(c in [' ', 9, 10, 11, 13, 160]);
     end;
 
-    local procedure SymbolSeparator(c: Char): Boolean
+    local procedure IsSymbolSeparator(c: Char): Boolean
     begin
         exit(c in ['(', ')', '''', '"']);
     end;
 
-    local procedure ParseNumberLiteral(c: Char): Interface "sal3 Lexeme"
+    local procedure ParseDot(): Interface "sal3 Lexeme"
+    var
+        c: Char;
+    begin
+        c := NextChar();
+
+        case true of
+            IsSymbolSeparator(c):
+                begin
+                    PushChar();
+                    exit(Lexemes.Dot);
+                end;
+            c = 0,
+            IsWhitespace(c):
+                exit(Lexemes.Dot);
+            c in ['0' .. '9']:
+                exit(ParseNumberLiteral(c, true, true));
+            else
+                exit(ParseSymbol('.' + Format(c)));
+        end;
+    end;
+
+    local procedure ParseDash(): Interface "sal3 Lexeme"
+    var
+        c: Char;
+    begin
+        c := NextChar();
+
+        case true of
+            IsSymbolSeparator(c):
+                begin
+                    PushChar();
+                    exit(Lexemes.Symbol('-'));
+                end;
+            c = 0,
+            IsWhitespace(c):
+                exit(Lexemes.Symbol('-'));
+            c in ['0' .. '9']:
+                exit(ParseNumberLiteral(c, false, true));
+            c = '.':
+                begin
+                    c := NextChar();
+
+                    case true of
+                        IsSymbolSeparator(c):
+                            begin
+                                PushChar();
+                                exit(Lexemes.Symbol('-.'));
+                            end;
+                        c = 0,
+                        IsWhitespace(c):
+                            exit(Lexemes.Symbol('-.'));
+                        c in ['0' .. '9']:
+                            exit(ParseNumberLiteral(c, false, true));
+                        else
+                            exit(ParseSymbol('-.' + Format(c)));
+                    end;
+                end;
+            else
+                exit(ParseSymbol('-' + Format(c)));
+        end;
+    end;
+
+    local procedure ParseNumberLiteral
+    (
+        c: Char;
+        Positive: Boolean;
+        DecimalSeparatorFound: Boolean
+    ): Interface "sal3 Lexeme"
     var
         Number: Decimal;
         SymbolBuilder: TextBuilder;
-        DecimalSeparatorFound: Boolean;
         DecimalPlaces: Integer;
     begin
         Number := c - '0';
@@ -113,7 +181,7 @@ codeunit 66000 "sal3 Lexer"
                 DecimalPlaces := 1;
             end;
 
-            if c in ['(', ')', '''', '"'] then begin
+            if IsSymbolSeparator(c) then begin
                 PushChar();
                 break;
             end;
@@ -123,7 +191,7 @@ codeunit 66000 "sal3 Lexer"
                 break;
         end;
 
-        exit(Lexemes.Number(Number));
+        exit(Lexemes.Number(Positive ? Number : -Number));
     end;
 
     local procedure ParseStringLiteral(): Codeunit "sal3 String"
@@ -154,7 +222,7 @@ codeunit 66000 "sal3 Lexer"
         exit(Lexemes.String(StringBuilder.ToText()));
     end;
 
-    local procedure ParseSymbol(c: Char): Codeunit "sal3 Symbol"
+    local procedure ParseSymbol(c: Text): Codeunit "sal3 Symbol"
     var
         SymbolBuilder: TextBuilder;
     begin
@@ -291,8 +359,12 @@ codeunit 66005 "sal3 Quote" implements "sal3 Lexeme", "sal3 Lexeme Quote"
 }
 
 interface "sal3 Lexeme Number" { }
+interface "sal3 Form Number"
+{
+    procedure Value(): Decimal;
+}
 
-codeunit 66006 "sal3 Number" implements "sal3 Lexeme", "sal3 Lexeme Number", "sal3 Form"
+codeunit 66006 "sal3 Number" implements "sal3 Lexeme", "sal3 Lexeme Number", "sal3 Form", "sal3 Form Number"
 {
     var
         Number: Decimal;
@@ -306,11 +378,20 @@ codeunit 66006 "sal3 Number" implements "sal3 Lexeme", "sal3 Lexeme Number", "sa
     begin
         exit(StrSubstNo('<Number="%1">', Number));
     end;
+
+    procedure Value(): Decimal
+    begin
+        exit(Number);
+    end;
 }
 
 interface "sal3 Lexeme String" { }
+interface "sal3 Form String"
+{
+    procedure Value(): Text;
+}
 
-codeunit 66007 "sal3 String" implements "sal3 Lexeme", "sal3 Lexeme String", "sal3 Form"
+codeunit 66007 "sal3 String" implements "sal3 Lexeme", "sal3 Lexeme String", "sal3 Form", "sal3 Form String"
 {
     var
         String: Text;
@@ -324,11 +405,20 @@ codeunit 66007 "sal3 String" implements "sal3 Lexeme", "sal3 Lexeme String", "sa
     begin
         exit(StrSubstNo('<String="%1">', String));
     end;
+
+    procedure Value(): Text
+    begin
+        exit(String);
+    end;
 }
 
 interface "sal3 Lexeme Symbol" { }
+interface "sal3 Form Symbol"
+{
+    procedure Name(): Text;
+}
 
-codeunit 66008 "sal3 Symbol" implements "sal3 Lexeme", "sal3 Lexeme Symbol", "sal3 Form"
+codeunit 66008 "sal3 Symbol" implements "sal3 Lexeme", "sal3 Lexeme Symbol", "sal3 Form", "sal3 Form Symbol"
 {
     var
         Symbol: Text;
@@ -342,11 +432,16 @@ codeunit 66008 "sal3 Symbol" implements "sal3 Lexeme", "sal3 Lexeme Symbol", "sa
     begin
         exit(StrSubstNo('<Symbol="%1">', Symbol));
     end;
+
+    procedure Name(): Text
+    begin
+        exit(Symbol);
+    end;
 }
 
 interface "sal3 Lexeme Dot" { }
 
-codeunit 66009 "sal3 Dot" implements "sal3 Lexeme Dot"
+codeunit 66009 "sal3 Dot" implements "sal3 Lexeme", "sal3 Lexeme Dot"
 {
     procedure ToString(): Text
     begin

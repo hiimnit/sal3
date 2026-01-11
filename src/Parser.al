@@ -89,9 +89,7 @@ codeunit 66011 "sal3 Forms"
     end;
 }
 
-// TODO codeunit environment - global vs local?
-
-interface "sal3 Form"
+interface "sal3 Form" extends "sal3 Form Or Function"
 {
     procedure ToString(): Text;
 }

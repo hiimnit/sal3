@@ -50,12 +50,35 @@ codeunit 66030 "sal3 Runner"
                 Error('Format not implemented for %1.', Form.ToString());
         end;
     end;
+
+    procedure EvalList(List: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
+    var
+        Cell: Interface "sal3 Form Cell";
+        Symbol: Interface "sal3 Form Symbol";
+        Forms: Codeunit "sal3 Forms";
+        Result: Interface "sal3 Form";
+    begin
+        Result := Forms.Nil;
+
+        while not (List is "sal3 Form Nil") do begin
+            if not (List is "sal3 Form Cell") then
+                Error('Invalid argument: Expected cell, got %1.', List.ToString());
+            Cell := List as "sal3 Form Cell";
+
+            Result := Eval(Cell.Car, Env);
+
+            List := Cell.Cdr;
+        end;
+
+        exit(Result);
+    end;
 }
 
 interface "sal3 Form Or Function" { }
 
 codeunit 66031 "sal3 Environment"
 {
+
     var
         // TODO parent env
         // TODO  - global vs local?
@@ -71,6 +94,8 @@ codeunit 66031 "sal3 Environment"
         Forms: Codeunit "sal3 Forms";
     begin
         Define('defun', Defun);
+        // TODO quote
+        // TODO progn
 
         // TODO cons, list
         Define('car', Car);
@@ -84,6 +109,24 @@ codeunit 66031 "sal3 Environment"
 
         // TODO constants - t
         Define('nil', Forms.Nil);
+    end;
+
+    var
+        ParentEnv: Codeunit "sal3 Environment";
+        HasParent: Boolean;
+
+    procedure Create(): Codeunit "sal3 Environment"
+    var
+        ChildEnv: Codeunit "sal3 Environment";
+    begin
+        ChildEnv._SetParent(this);
+        exit(ChildEnv);
+    end;
+
+    procedure _SetParent(InParentEnv: Codeunit "sal3 Environment")
+    begin
+        ParentEnv := InParentEnv;
+        HasParent := true;
     end;
 
     procedure Define(Name: Text; Value: Interface "sal3 Form")
@@ -102,7 +145,9 @@ codeunit 66031 "sal3 Environment"
         if Bindings.ContainsKey(Name) then
             exit(Bindings.Get(Name));
 
-        // TODO parent handling
+        if HasParent then
+            exit(ParentEnv.Get(Name));
+
         Error('%1 is not defined.', Name);
     end;
 
@@ -132,30 +177,132 @@ interface "sal3 Function" extends "sal3 Form Or Function"
     procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
 }
 
-codeunit 66032 "sal3 Defined Function"
+codeunit 66032 "sal3 Defined Function" implements "sal3 Function"
 {
-    trigger OnRun()
+    procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
+    var
+        FunctionEnv: Codeunit "sal3 Environment";
+        Runner: Codeunit "sal3 Runner";
     begin
+        FunctionEnv := Env.Create();
 
+        EvalArguments(Runner, Form, Env, FunctionEnv);
+
+        exit(Runner.EvalList(Body, FunctionEnv));
+    end;
+
+    local procedure EvalArguments
+    (
+        Runner: Codeunit "sal3 Runner";
+        Form: Interface "sal3 Form";
+        Env: Codeunit "sal3 Environment";
+        FunctionEnv: Codeunit "sal3 Environment"
+    )
+    var
+        ParameterName: Text;
+        Value: Interface "sal3 Form";
+        Cell: Interface "sal3 Form Cell";
+    begin
+        foreach ParameterName in ParameterNames do begin
+            if not (Form is "sal3 Form Cell") then
+                Error('Invalid number of arguments when calling %1.', Name);
+            Cell := Form as "sal3 Form Cell";
+
+            Value := Runner.Eval(Cell.Car, Env);
+            FunctionEnv.Define(ParameterName, Value);
+
+            Form := Cell.Cdr;
+        end;
+
+        if not (Form is "sal3 Form Nil") then
+            Error('Invalid number of arguments when calling %1.', Name);
+    end;
+
+    procedure Initialize
+    (
+        InName: Text;
+        InParameterNames: List of [Text];
+        InBody: Interface "sal3 Form"
+    )
+    begin
+        Name := InName;
+        ParameterNames := InParameterNames;
+        Body := InBody;
     end;
 
     var
-        myInt: Integer;
+        Name: Text;
+        ParameterNames: List of [Text];
+        Body: Interface "sal3 Form";
 }
 
 codeunit 66039 "sal3 Function Defun" implements "sal3 Function"
 {
     procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
     var
-        Runner: Codeunit "sal3 Runner";
-        Number: Codeunit "sal3 Number";
+        DefinedFunction: Codeunit "sal3 Defined Function";
         Cell: Interface "sal3 Form Cell";
-        Arg: Interface "sal3 Form";
-        ArgNumber: Interface "sal3 Form Number";
-        Result: Decimal;
+        Symbol: Interface "sal3 Form Symbol";
+        FunctionBody: Interface "sal3 Form";
+        FunctionName: Text;
+        FunctionParameterNames: List of [Text];
     begin
-        // (defun name (args) (body))
-        Error('TODO');
+        if not (Form is "sal3 Form Cell") then
+            Error('Invalid defun argument: Expected function name, got %1.', Form.ToString());
+        Cell := Form as "sal3 Form Cell";
+
+        if not (Cell.Car is "sal3 Form Symbol") then
+            Error('Invalid defun argument: Expected function name, got %1.', Cell.Car.ToString());
+        Symbol := Cell.Car as "sal3 Form Symbol";
+
+        FunctionName := Symbol.Name;
+
+        if not (Cell.Cdr is "sal3 Form Cell") then
+            Error('Invalid defun argument: Expected list of parameters, got %1.', Cell.Cdr.ToString());
+        Cell := Cell.Cdr as "sal3 Form Cell";
+
+        FunctionParameterNames := ParseParameterNames(Cell.Car);
+
+        FunctionBody := Cell.Cdr;
+
+        DefinedFunction.Initialize(
+            FunctionName,
+            FunctionParameterNames,
+            FunctionBody
+        );
+
+        Env.Define(FunctionName, DefinedFunction);
+
+        exit(Symbol as "sal3 Form");
+    end;
+
+    local procedure ParseParameterNames
+    (
+        Parameter: Interface "sal3 Form"
+    ): List of [Text]
+    var
+        Cell: Interface "sal3 Form Cell";
+        ParameterName: Text;
+        FunctionParameterNames: List of [Text];
+    begin
+        while not (Parameter is "sal3 Form Nil") do begin
+            if not (Parameter is "sal3 Form Cell") then
+                Error('Invalid defun argument: Expected list of parameter names, got %1.', Parameter.ToString());
+            Cell := Parameter as "sal3 Form Cell";
+
+            if not (Cell.Car is "sal3 Form Symbol") then
+                Error('Invalid defun argument: Expected parameter name, got %1.', Cell.Car.ToString());
+
+            ParameterName := (Cell.Car as "sal3 Form Symbol").Name;
+
+            if FunctionParameterNames.Contains(ParameterName) then
+                Error('Parameter names must be unique: Duplicate parameter %1.', ParameterName);
+            FunctionParameterNames.Add(ParameterName);
+
+            Parameter := Cell.Cdr;
+        end;
+
+        exit(FunctionParameterNames);
     end;
 }
 codeunit 66040 "sal3 Function Add" implements "sal3 Function"

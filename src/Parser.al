@@ -1,4 +1,4 @@
-codeunit 66010 "sal3 Parser"
+codeunit 66011 "sal3 Parser"
 {
     var
         Lexer: Codeunit "sal3 Lexer";
@@ -77,7 +77,7 @@ codeunit 66010 "sal3 Parser"
     end;
 }
 
-codeunit 66011 "sal3 Forms"
+codeunit 66012 "sal3 Forms"
 {
     procedure Nil(): Codeunit "sal3 Nil"
     begin
@@ -86,6 +86,11 @@ codeunit 66011 "sal3 Forms"
     procedure Cell(InCar: Interface "sal3 Form"; InCdr: Interface "sal3 Form") Form: Codeunit "sal3 Cell"
     begin
         Form.Init(InCar, InCdr);
+    end;
+
+    procedure Bool(InBool: Boolean) Form: Codeunit "sal3 Boolean"
+    begin
+        Form.Init(InBool);
     end;
 }
 

@@ -448,3 +448,34 @@ codeunit 66009 "sal3 Dot" implements "sal3 Lexeme", "sal3 Lexeme Dot"
         exit('<.>');
     end;
 }
+
+// TODO "sal3 Record"
+// TODO "sal3 Date"
+// TODO "sal3 Time"
+// TODO "sal3 DateTime"
+
+interface "sal3 Form Boolean"
+{
+    procedure Value(): Boolean;
+}
+
+codeunit 66010 "sal3 Boolean" implements "sal3 Form", "sal3 Form Boolean"
+{
+    var
+        Bool: Boolean;
+
+    procedure Init(InBool: Boolean)
+    begin
+        Bool := InBool;
+    end;
+
+    procedure ToString(): Text
+    begin
+        exit(StrSubstNo('<Boolean="%1">', Bool));
+    end;
+
+    procedure Value(): Boolean
+    begin
+        exit(Bool);
+    end;
+}

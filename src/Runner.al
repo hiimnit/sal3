@@ -88,11 +88,15 @@ codeunit 66031 "sal3 Environment"
     procedure Initialize()
     var
         Defun: Codeunit "sal3 Function Defun";
+        "If": Codeunit "sal3 Function If";
         Add: Codeunit "sal3 Function Add";
+        Subtract: Codeunit "sal3 Function Subtract";
         Car: Codeunit "sal3 Function Car";
         Cdr: Codeunit "sal3 Function Cdr";
         Forms: Codeunit "sal3 Forms";
     begin
+        Define('if', "If");
+
         Define('defun', Defun);
         // TODO quote
         // TODO progn
@@ -102,13 +106,24 @@ codeunit 66031 "sal3 Environment"
         Define('cdr', Cdr);
 
         Define('+', Add);
-        // TODO Define('-', 'TODO');
+        Define('-', Subtract);
         // TODO Define('*', 'TODO');
         // TODO Define('/', 'TODO');
         // TODO mod div
 
-        // TODO constants - t
+        Define('=', Comparator('='));
+        Define('<', Comparator('<'));
+        Define('>', Comparator('>'));
+        Define('<=', Comparator('<='));
+        Define('>=', Comparator('>='));
+
         Define('nil', Forms.Nil);
+        Define('t', Forms.Bool(true));
+    end;
+
+    local procedure Comparator(Operator: Text) Cmp: Codeunit "sal3 Function Comparison"
+    begin
+        Cmp.Init(Operator);
     end;
 
     var
@@ -169,6 +184,36 @@ codeunit 66031 "sal3 Environment"
         if not (FormOrFunction is "sal3 Function") then
             Error('%1 is not a function.', Name);
         exit(FormOrFunction as "sal3 Function");
+    end;
+
+    procedure IsTruthy(Form: Interface "sal3 Form"): Boolean
+    begin
+        if Form is "sal3 Form Nil" then
+            exit(false);
+        if Form is "sal3 Form Boolean" then
+            exit((Form as "sal3 Form Boolean").Value);
+        exit(true);
+    end;
+
+    procedure Cast
+    (
+        Form: Interface "sal3 Form";
+        FunctionName: Text
+    ): Interface "sal3 Form Cell"
+    begin
+        if not (Form is "sal3 Form Cell") then
+            Error('Invalid %1 argument: Expected cons cell, got %2.', FunctionName, Form.ToString());
+        exit(Form as "sal3 Form Cell");
+    end;
+
+    procedure AssertNilInvalidNoArgs
+    (
+        Form: Interface "sal3 Form";
+        FunctionName: Text
+    ): Interface "sal3 Form Cell"
+    begin
+        if not (Form is "sal3 Form Nil") then
+            Error('Invalid number of arguments for %1.', FunctionName);
     end;
 }
 
@@ -339,7 +384,149 @@ codeunit 66040 "sal3 Function Add" implements "sal3 Function"
     end;
 }
 
-codeunit 66041 "sal3 Function Car" implements "sal3 Function"
+codeunit 66041 "sal3 Function Subtract" implements "sal3 Function"
+{
+    procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
+    var
+        Runner: Codeunit "sal3 Runner";
+        Number: Codeunit "sal3 Number";
+        Cell: Interface "sal3 Form Cell";
+        Arg: Interface "sal3 Form";
+        ArgNumber: Interface "sal3 Form Number";
+        Result: Decimal;
+    begin
+        if not (Form is "sal3 Form Cell") then
+            Error('Invalid - argument: Expected cons cell, got %1.', Arg.ToString());
+        Cell := Form as "sal3 Form Cell";
+
+        Arg := Runner.Eval(Cell.Car, Env);
+        if not (Arg is "sal3 Form Number") then
+            Error('Invalid - argument: Expected number, got %1.', Arg.ToString());
+
+        ArgNumber := Arg as "sal3 Form Number";
+
+        Form := Cell.Cdr;
+        if Form is "sal3 Form Nil" then begin
+            Number.Init(-ArgNumber.Value);
+            exit(Number);
+        end;
+
+        Result := ArgNumber.Value;
+
+        while Form is "sal3 Form Cell" do begin
+            Cell := Form as "sal3 Form Cell";
+
+            Arg := Runner.Eval(Cell.Car, Env);
+            if not (Arg is "sal3 Form Number") then
+                Error('Invalid - argument: Expected number, got %1.', Arg.ToString());
+
+            ArgNumber := Arg as "sal3 Form Number";
+            Result -= ArgNumber.Value;
+
+            Form := Cell.Cdr;
+        end;
+
+        if not (Form is "sal3 Form Nil") then
+            Error('Invalid -: Arguments are not a list.');
+
+        Number.Init(Result);
+        exit(Number);
+    end;
+}
+
+codeunit 66042 "sal3 Function If" implements "sal3 Function"
+{
+    procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
+    var
+        Runner: Codeunit "sal3 Runner";
+        ConditionCell, TruthyCell, FalsyCell : Interface "sal3 Form Cell";
+        Condition, Truthy, Falsy : Interface "sal3 Form";
+        Result: Interface "sal3 Form";
+        Forms: Codeunit "sal3 Forms";
+    begin
+        ConditionCell := Env.Cast(Form, 'if');
+        Condition := ConditionCell.Car;
+
+        TruthyCell := Env.Cast(ConditionCell.Cdr, 'if');
+        Truthy := TruthyCell.Car;
+
+        if TruthyCell.Cdr is "sal3 Form Nil" then
+            Falsy := Forms.Nil
+        else begin
+            FalsyCell := Env.Cast(TruthyCell.Cdr, 'if');
+            Falsy := FalsyCell.Car;
+            Env.AssertNilInvalidNoArgs(FalsyCell.Cdr, 'if');
+        end;
+
+        Result := Runner.Eval(Condition, Env);
+        if Env.IsTruthy(Result) then
+            exit(Runner.Eval(Truthy, Env));
+        exit(Runner.Eval(Falsy, Env));
+    end;
+}
+
+codeunit 66043 "sal3 Function Comparison" implements "sal3 Function"
+{
+    procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
+    var
+        Runner: Codeunit "sal3 Runner";
+        Forms: Codeunit "sal3 Forms";
+        Cell: Interface "sal3 Form Cell";
+        FirstArg, Arg : Interface "sal3 Form";
+    begin
+        Cell := Env.Cast(Form, Operator);
+
+        FirstArg := Runner.Eval(Cell.Car, Env);
+
+        Form := Cell.Cdr;
+        while not (Form is "sal3 Form Nil") do begin
+            Cell := Env.Cast(Form, Operator);
+
+            Arg := Runner.Eval(Cell.Car, Env);
+
+            if not Compare(FirstArg, Arg) then
+                exit(Forms.Bool(false));
+
+            Form := Cell.Cdr;
+        end;
+
+        exit(Forms.Bool(true));
+    end;
+
+    var
+        Operator: Text;
+
+    procedure Init(InOperator: Text)
+    begin
+        Operator := InOperator;
+    end;
+
+    local procedure Compare(FirstArg: Interface "sal3 Form"; Arg: Interface "sal3 Form"): Boolean
+    var
+        FirstNumber, Number : Interface "sal3 Form Number";
+    begin
+        // TODO compare other types 
+        FirstNumber := FirstArg as "sal3 Form Number";
+        Number := Arg as "sal3 Form Number";
+
+        case Operator of
+            '=':
+                exit(FirstNumber.Value = Number.Value);
+            '<':
+                exit(FirstNumber.Value < Number.Value);
+            '>':
+                exit(FirstNumber.Value > Number.Value);
+            '<=':
+                exit(FirstNumber.Value <= Number.Value);
+            '>=':
+                exit(FirstNumber.Value >= Number.Value);
+            else
+                Error('Invalid comparison operator %1.', Operator);
+        end;
+    end;
+}
+
+codeunit 66044 "sal3 Function Car" implements "sal3 Function"
 {
     procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
     var
@@ -364,7 +551,7 @@ codeunit 66041 "sal3 Function Car" implements "sal3 Function"
     end;
 }
 
-codeunit 66042 "sal3 Function Cdr" implements "sal3 Function"
+codeunit 66045 "sal3 Function Cdr" implements "sal3 Function"
 {
     procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
     var

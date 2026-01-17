@@ -80,24 +80,26 @@ codeunit 66031 "sal3 Environment"
 {
 
     var
-        // TODO parent env
-        // TODO  - global vs local?
-
         Bindings: Dictionary of [Text, Interface "sal3 Form Or Function"];
 
     procedure Initialize()
     var
         Defun: Codeunit "sal3 Function Defun";
+        Let: Codeunit "sal3 Function Let";
         "If": Codeunit "sal3 Function If";
         Add: Codeunit "sal3 Function Add";
         Subtract: Codeunit "sal3 Function Subtract";
         Car: Codeunit "sal3 Function Car";
         Cdr: Codeunit "sal3 Function Cdr";
+        RecordOpen: Codeunit "sal3 Function Record Open";
+        RecordFindFirst: Codeunit "sal3 Function Record FindFirst";
+        FieldValue: Codeunit "sal3 Function Field Value";
         Forms: Codeunit "sal3 Forms";
     begin
         Define('if', "If");
 
         Define('defun', Defun);
+        Define('let', Let);
         // TODO quote
         // TODO progn
 
@@ -119,6 +121,11 @@ codeunit 66031 "sal3 Environment"
 
         Define('nil', Forms.Nil);
         Define('t', Forms.Bool(true));
+
+        Define('record-open', RecordOpen);
+        Define('record-findfirst', RecordFindFirst);
+        // TODO record-findfirst-return-record
+        Define('field-value', FieldValue);
     end;
 
     local procedure Comparator(Operator: Text) Cmp: Codeunit "sal3 Function Comparison"
@@ -206,11 +213,33 @@ codeunit 66031 "sal3 Environment"
         exit(Form as "sal3 Form Cell");
     end;
 
+    procedure CastString
+    (
+        Form: Interface "sal3 Form";
+        FunctionName: Text
+    ): Interface "sal3 Form String"
+    begin
+        if not (Form is "sal3 Form String") then
+            Error('Invalid %1 argument: Expected string, got %2.', FunctionName, Form.ToString());
+        exit(Form as "sal3 Form String");
+    end;
+
+    procedure CastRecord
+    (
+        Form: Interface "sal3 Form";
+        FunctionName: Text
+    ): Interface "sal3 Form Record"
+    begin
+        if not (Form is "sal3 Form Record") then
+            Error('Invalid %1 argument: Expected record, got %2.', FunctionName, Form.ToString());
+        exit(Form as "sal3 Form Record");
+    end;
+
     procedure AssertNilInvalidNoArgs
     (
         Form: Interface "sal3 Form";
         FunctionName: Text
-    ): Interface "sal3 Form Cell"
+    )
     begin
         if not (Form is "sal3 Form Nil") then
             Error('Invalid number of arguments for %1.', FunctionName);
@@ -350,7 +379,83 @@ codeunit 66039 "sal3 Function Defun" implements "sal3 Function"
         exit(FunctionParameterNames);
     end;
 }
-codeunit 66040 "sal3 Function Add" implements "sal3 Function"
+codeunit 66040 "sal3 Function Let" implements "sal3 Function"
+{
+    procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
+    var
+        ChildEnv: Codeunit "sal3 Environment";
+        Runner: Codeunit "sal3 Runner";
+        Cell, ArgCell : Interface "sal3 Form Cell";
+        Arg: Interface "sal3 Form";
+    begin
+        Cell := Env.Cast(Form, 'let');
+
+        ChildEnv := Env.Create();
+        AssignVariables(
+            Runner,
+            Cell.Car,
+            Env,
+            ChildEnv
+        );
+
+        exit(Runner.EvalList(Cell.Cdr, ChildEnv));
+    end;
+
+    local procedure AssignVariables
+    (
+        Runner: Codeunit "sal3 Runner";
+        Form: Interface "sal3 Form";
+        Env: Codeunit "sal3 Environment";
+        ChildEnv: Codeunit "sal3 Environment"
+    )
+    var
+        Cell: Interface "sal3 Form Cell";
+        VariableName: Text;
+    begin
+        while not (Form is "sal3 Form Nil") do begin
+            Cell := Env.Cast(Form, 'let variables');
+
+            AssignVariable(
+                Runner,
+                Cell.Car,
+                Env,
+                ChildEnv
+            );
+
+            Form := Cell.Cdr;
+        end;
+    end;
+
+    local procedure AssignVariable
+    (
+        Runner: Codeunit "sal3 Runner";
+        Form: Interface "sal3 Form";
+        Env: Codeunit "sal3 Environment";
+        ChildEnv: Codeunit "sal3 Environment"
+    )
+    var
+        Cell: Interface "sal3 Form Cell";
+        VariableName: Text;
+    begin
+        Cell := Env.Cast(Form, 'let variable');
+
+        if not (Cell.Car is "sal3 Form Symbol") then
+            Error('Invalid let variable argument: Expected variable name, got %1.', Cell.Car.ToString());
+
+        VariableName := (Cell.Car as "sal3 Form Symbol").Name;
+
+        Cell := Env.Cast(Cell.Cdr, 'let variable');
+
+        ChildEnv.Define(
+            VariableName,
+            Runner.Eval(Cell.Car, Env)
+        );
+
+        Env.AssertNilInvalidNoArgs(Cell.Cdr, 'let variable');
+    end;
+}
+
+codeunit 66041 "sal3 Function Add" implements "sal3 Function"
 {
     procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
     var
@@ -384,7 +489,7 @@ codeunit 66040 "sal3 Function Add" implements "sal3 Function"
     end;
 }
 
-codeunit 66041 "sal3 Function Subtract" implements "sal3 Function"
+codeunit 66042 "sal3 Function Subtract" implements "sal3 Function"
 {
     procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
     var
@@ -434,7 +539,7 @@ codeunit 66041 "sal3 Function Subtract" implements "sal3 Function"
     end;
 }
 
-codeunit 66042 "sal3 Function If" implements "sal3 Function"
+codeunit 66043 "sal3 Function If" implements "sal3 Function"
 {
     procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
     var
@@ -465,7 +570,7 @@ codeunit 66042 "sal3 Function If" implements "sal3 Function"
     end;
 }
 
-codeunit 66043 "sal3 Function Comparison" implements "sal3 Function"
+codeunit 66044 "sal3 Function Comparison" implements "sal3 Function"
 {
     procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
     var
@@ -526,12 +631,11 @@ codeunit 66043 "sal3 Function Comparison" implements "sal3 Function"
     end;
 }
 
-codeunit 66044 "sal3 Function Car" implements "sal3 Function"
+codeunit 66045 "sal3 Function Car" implements "sal3 Function"
 {
     procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
     var
         Runner: Codeunit "sal3 Runner";
-        Number: Codeunit "sal3 Number";
         Cell, ArgCell : Interface "sal3 Form Cell";
         Arg: Interface "sal3 Form";
     begin
@@ -551,12 +655,11 @@ codeunit 66044 "sal3 Function Car" implements "sal3 Function"
     end;
 }
 
-codeunit 66045 "sal3 Function Cdr" implements "sal3 Function"
+codeunit 66046 "sal3 Function Cdr" implements "sal3 Function"
 {
     procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
     var
         Runner: Codeunit "sal3 Runner";
-        Number: Codeunit "sal3 Number";
         Cell, ArgCell : Interface "sal3 Form Cell";
         Arg: Interface "sal3 Form";
     begin
@@ -573,5 +676,68 @@ codeunit 66045 "sal3 Function Cdr" implements "sal3 Function"
 
         ArgCell := Arg as "sal3 Form Cell";
         exit(ArgCell.Cdr);
+    end;
+}
+codeunit 66047 "sal3 Function Record Open" implements "sal3 Function"
+{
+    procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
+    var
+        Runner: Codeunit "sal3 Runner";
+        Forms: Codeunit "sal3 Forms";
+        Cell: Interface "sal3 Form Cell";
+        Arg: Interface "sal3 Form";
+        StringArg: Interface "sal3 Form String";
+    begin
+        Cell := Env.Cast(Form, 'record-open');
+        Env.AssertNilInvalidNoArgs(Cell.Cdr, 'record-open');
+
+        Arg := Runner.Eval(Cell.Car, Env);
+        StringArg := Env.CastString(Arg, 'record-open');
+
+        exit(Forms.Record(StringArg.Value));
+    end;
+}
+
+codeunit 66048 "sal3 Function Record FindFirst" implements "sal3 Function"
+{
+    procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
+    var
+        Runner: Codeunit "sal3 Runner";
+        Forms: Codeunit "sal3 Forms";
+        Cell: Interface "sal3 Form Cell";
+        Arg: Interface "sal3 Form";
+        RecordArg: Interface "sal3 Form Record";
+    begin
+        Cell := Env.Cast(Form, 'record-findfirst');
+        Env.AssertNilInvalidNoArgs(Cell.Cdr, 'record-findfirst');
+
+        Arg := Runner.Eval(Cell.Car, Env);
+        RecordArg := Env.CastRecord(Arg, 'field-value');
+
+        exit(Forms.Bool(RecordArg.FindFirst()));
+    end;
+}
+
+codeunit 66049 "sal3 Function Field Value" implements "sal3 Function"
+{
+    procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
+    var
+        Runner: Codeunit "sal3 Runner";
+        RecordCell, FieldNameCell : Interface "sal3 Form Cell";
+        Arg: Interface "sal3 Form";
+        RecordArg: Interface "sal3 Form Record";
+        StringArg: Interface "sal3 Form String";
+    begin
+        RecordCell := Env.Cast(Form, 'field-value');
+        FieldNameCell := Env.Cast(RecordCell.Cdr, 'field-value');
+        Env.AssertNilInvalidNoArgs(FieldNameCell.Cdr, 'field-value');
+
+        Arg := Runner.Eval(RecordCell.Car, Env);
+        RecordArg := Env.CastRecord(Arg, 'field-value');
+
+        Arg := Runner.Eval(FieldNameCell.Car, Env);
+        StringArg := Env.CastString(Arg, 'field-value');
+
+        exit(RecordArg.FieldValue(StringArg.Value));
     end;
 }

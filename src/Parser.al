@@ -1,4 +1,4 @@
-codeunit 66011 "sal3 Parser"
+codeunit 66012 "sal3 Parser"
 {
     var
         Lexer: Codeunit "sal3 Lexer";
@@ -77,7 +77,7 @@ codeunit 66011 "sal3 Parser"
     end;
 }
 
-codeunit 66012 "sal3 Forms"
+codeunit 66013 "sal3 Forms"
 {
     procedure Nil(): Codeunit "sal3 Nil"
     begin
@@ -91,6 +91,32 @@ codeunit 66012 "sal3 Forms"
     procedure Bool(InBool: Boolean) Form: Codeunit "sal3 Boolean"
     begin
         Form.Init(InBool);
+    end;
+
+    procedure Number(InNumber: Decimal) Form: Codeunit "sal3 Number"
+    begin
+        Form.Init(InNumber);
+    end;
+
+    procedure String(InString: Text) Form: Codeunit "sal3 String"
+    begin
+        Form.Init(InString);
+    end;
+
+    procedure Record(TableName: Text) Form: Codeunit "sal3 Record"
+    var
+        AllObj: Record AllObj;
+    begin
+        // TODO caching?
+        if StrLen(TableName) > MaxStrLen(AllObj."Object Name") then
+            Error('Invalid table name: Name "%1" is longer than %2 characters.', TableName, MaxStrLen(AllObj."Object Name"));
+
+        AllObj.SetRange("Object Type", AllObj."Object Type"::Table);
+        AllObj.SetRange("Object Name", TableName);
+        if not AllObj.FindFirst() then
+            Error('Invalid table name: Table "%1" does not exist.', TableName);
+
+        Form.Init(AllObj."Object ID");
     end;
 }
 

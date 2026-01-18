@@ -383,6 +383,11 @@ codeunit 66006 "sal3 Number" implements "sal3 Lexeme", "sal3 Lexeme Number", "sa
     begin
         exit(Number);
     end;
+
+    procedure Unwrap(): Variant
+    begin
+        exit(Number);
+    end;
 }
 
 interface "sal3 Lexeme String" { }
@@ -407,6 +412,11 @@ codeunit 66007 "sal3 String" implements "sal3 Lexeme", "sal3 Lexeme String", "sa
     end;
 
     procedure Value(): Text
+    begin
+        exit(String);
+    end;
+
+    procedure Unwrap(): Variant
     begin
         exit(String);
     end;
@@ -437,6 +447,11 @@ codeunit 66008 "sal3 Symbol" implements "sal3 Lexeme", "sal3 Lexeme Symbol", "sa
     begin
         exit(Symbol);
     end;
+
+    procedure Unwrap(): Variant
+    begin
+        Error('Attempted to unwrap symbol "%1".', Symbol);
+    end;
 }
 
 interface "sal3 Lexeme Dot" { }
@@ -449,7 +464,6 @@ codeunit 66009 "sal3 Dot" implements "sal3 Lexeme", "sal3 Lexeme Dot"
     end;
 }
 
-// TODO "sal3 Record"
 // TODO "sal3 Date"
 // TODO "sal3 Time"
 // TODO "sal3 DateTime"
@@ -478,13 +492,18 @@ codeunit 66010 "sal3 Boolean" implements "sal3 Form", "sal3 Form Boolean"
     begin
         exit(Bool);
     end;
+
+    procedure Unwrap(): Variant
+    begin
+        exit(Bool);
+    end;
 }
 
 interface "sal3 Form Record"
 {
     procedure Value(): RecordRef;
-    procedure FindFirst(): Boolean;
     procedure FieldValue(FieldName: Text): Interface "sal3 Form";
+    procedure FindFieldByName(FieldName: Text): Integer;
 }
 
 codeunit 66011 "sal3 Record" implements "sal3 Form", "sal3 Form Record"
@@ -507,27 +526,17 @@ codeunit 66011 "sal3 Record" implements "sal3 Form", "sal3 Form Record"
         exit(RecordRef);
     end;
 
-    procedure FindFirst(): Boolean
+    procedure Unwrap(): Variant
     begin
-        exit(RecordRef.FindFirst());
+        exit(RecordRef);
     end;
 
     procedure FieldValue(FieldName: Text): Interface "sal3 Form"
     var
-        Field: Record Field;
         FieldRef: FieldRef;
         Forms: Codeunit "sal3 Forms";
     begin
-        // TODO caching?
-        if StrLen(FieldName) > MaxStrLen(Field.FieldName) then
-            Error('Invalid field name: Name "%1" is longer than %2 characters.', FieldName, MaxStrLen(Field.FieldName));
-
-        Field.SetRange(TableNo, RecordRef.Number);
-        Field.SetRange(FieldName, FieldName);
-        if not Field.FindFirst() then
-            Error('Invalid field name: Field "%1" does not exist in table "%2".', FieldName, RecordRef.Name);
-
-        FieldRef := RecordRef.Field(Field."No.");
+        FieldRef := RecordRef.Field(FindFieldByName(FieldName));
 
         case FieldRef.Type of
             FieldType::Text,
@@ -541,6 +550,22 @@ codeunit 66011 "sal3 Record" implements "sal3 Form", "sal3 Form Record"
             else
                 Error('Unsupported field type: Field "%1" of type %2 is not supported.', FieldName, FieldRef.Type);
         end;
+    end;
+
+    procedure FindFieldByName(FieldName: Text): Integer
+    var
+        Field: Record Field;
+    begin
+        // TODO caching?
+        if StrLen(FieldName) > MaxStrLen(Field.FieldName) then
+            Error('Invalid field name: Name "%1" is longer than %2 characters.', FieldName, MaxStrLen(Field.FieldName));
+
+        Field.SetRange(TableNo, RecordRef.Number);
+        Field.SetRange(FieldName, FieldName);
+        if not Field.FindFirst() then
+            Error('Invalid field name: Field "%1" does not exist in table "%2".', FieldName, RecordRef.Name);
+
+        exit(Field."No.");
     end;
 
     // TODO Get - build RecordId and Get?

@@ -123,6 +123,7 @@ codeunit 66013 "sal3 Forms"
 interface "sal3 Form" extends "sal3 Form Or Function"
 {
     procedure ToString(): Text;
+    procedure Unwrap(): Variant;
 }
 
 interface "sal3 Form Cell"
@@ -156,6 +157,11 @@ codeunit 66020 "sal3 Cell" implements "sal3 Form", "sal3 Form Cell"
     begin
         exit(CdrForm);
     end;
+
+    procedure Unwrap(): Variant
+    begin
+        Error('Attempted to unwrap cell "%1".', ToString());
+    end;
 }
 
 interface "sal3 Form Nil" { }
@@ -167,5 +173,10 @@ codeunit 66021 "sal3 Nil" implements "sal3 Form", "sal3 Form Nil"
     procedure ToString(): Text;
     begin
         exit('nil');
+    end;
+
+    procedure Unwrap(): Variant
+    begin
+        Error('Attempted to unwrap nil.');
     end;
 }

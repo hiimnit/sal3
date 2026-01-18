@@ -92,7 +92,6 @@ codeunit 66031 "sal3 Environment"
         Car: Codeunit "sal3 Function Car";
         Cdr: Codeunit "sal3 Function Cdr";
         RecordOpen: Codeunit "sal3 Function Record Open";
-        RecordFindFirst: Codeunit "sal3 Function Record FindFirst";
         FieldValue: Codeunit "sal3 Function Field Value";
         Forms: Codeunit "sal3 Forms";
     begin
@@ -111,26 +110,52 @@ codeunit 66031 "sal3 Environment"
         Define('-', Subtract);
         // TODO Define('*', 'TODO');
         // TODO Define('/', 'TODO');
-        // TODO mod div
+        // TODO mod, div
+        // TODO round
 
-        Define('=', Comparator('='));
-        Define('<', Comparator('<'));
-        Define('>', Comparator('>'));
-        Define('<=', Comparator('<='));
-        Define('>=', Comparator('>='));
+        DefineComparator('=');
+        DefineComparator('/=');
+        DefineComparator('<');
+        DefineComparator('>');
+        DefineComparator('<=');
+        DefineComparator('>=');
 
         Define('nil', Forms.Nil);
         Define('t', Forms.Bool(true));
 
         Define('record-open', RecordOpen);
-        Define('record-findfirst', RecordFindFirst);
-        // TODO record-findfirst-return-record
+        DefineRecordFind('record-findfirst');
+        DefineRecordFind('record-findfirst-return');
+        DefineRecordFind('record-findlast');
+        DefineRecordFind('record-findlast-return');
+        DefineRecordFind('record-findset');
+        DefineRecordFind('record-findset-return');
+        DefineRecordFind('record-next');
+        DefineRecordFilter('record-setrange');
+        DefineRecordFilter('record-setfilter');
+
         Define('field-value', FieldValue);
     end;
 
-    local procedure Comparator(Operator: Text) Cmp: Codeunit "sal3 Function Comparison"
+    local procedure DefineComparator(Operator: Text)
+    var
+        Cmp: Codeunit "sal3 Function Comparison";
     begin
-        Cmp.Init(Operator);
+        Define(Operator, Cmp.Init(Operator));
+    end;
+
+    local procedure DefineRecordFind(Name: Text)
+    var
+        Find: Codeunit "sal3 Function Record FindX";
+    begin
+        Define(Name, Find.Init(Name));
+    end;
+
+    local procedure DefineRecordFilter(Name: Text)
+    var
+        Filter: Codeunit "sal3 Function Record Filter";
+    begin
+        Define(Name, Filter.Init(Name));
     end;
 
     var
@@ -601,9 +626,10 @@ codeunit 66044 "sal3 Function Comparison" implements "sal3 Function"
     var
         Operator: Text;
 
-    procedure Init(InOperator: Text)
+    procedure Init(InOperator: Text): Codeunit "sal3 Function Comparison"
     begin
         Operator := InOperator;
+        exit(this);
     end;
 
     local procedure Compare(FirstArg: Interface "sal3 Form"; Arg: Interface "sal3 Form"): Boolean
@@ -617,6 +643,8 @@ codeunit 66044 "sal3 Function Comparison" implements "sal3 Function"
         case Operator of
             '=':
                 exit(FirstNumber.Value = Number.Value);
+            '/=':
+                exit(FirstNumber.Value <> Number.Value);
             '<':
                 exit(FirstNumber.Value < Number.Value);
             '>':
@@ -698,27 +726,133 @@ codeunit 66047 "sal3 Function Record Open" implements "sal3 Function"
     end;
 }
 
-codeunit 66048 "sal3 Function Record FindFirst" implements "sal3 Function"
+codeunit 66048 "sal3 Function Record FindX" implements "sal3 Function"
 {
     procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
     var
         Runner: Codeunit "sal3 Runner";
-        Forms: Codeunit "sal3 Forms";
         Cell: Interface "sal3 Form Cell";
         Arg: Interface "sal3 Form";
-        RecordArg: Interface "sal3 Form Record";
     begin
-        Cell := Env.Cast(Form, 'record-findfirst');
-        Env.AssertNilInvalidNoArgs(Cell.Cdr, 'record-findfirst');
+        Cell := Env.Cast(Form, Type);
+        Env.AssertNilInvalidNoArgs(Cell.Cdr, Type);
 
         Arg := Runner.Eval(Cell.Car, Env);
-        RecordArg := Env.CastRecord(Arg, 'field-value');
 
-        exit(Forms.Bool(RecordArg.FindFirst()));
+        exit(Find(Env.CastRecord(Arg, Type)));
+    end;
+
+    var
+        Type: Text;
+
+    procedure Init(InType: Text): Codeunit "sal3 Function Record FindX"
+    begin
+        Type := InType;
+        exit(this);
+    end;
+
+    local procedure Find(Record: Interface "sal3 Form Record"): Interface "sal3 Form"
+    var
+        Forms: Codeunit "sal3 Forms";
+        RecordRef: RecordRef;
+    begin
+        RecordRef := Record.Value();
+
+        case Type of
+            'record-findfirst':
+                exit(Forms.Bool(RecordRef.FindFirst()));
+            'record-findlast':
+                exit(Forms.Bool(RecordRef.FindLast()));
+            'record-findset':
+                exit(Forms.Bool(RecordRef.FindSet()));
+            'record-next':
+                exit(Forms.Number(RecordRef.Next())); // TODO Steps
+            'record-findfirst-return':
+                begin
+                    RecordRef.FindFirst();
+                    exit(Record as "sal3 Form");
+                end;
+            'record-findlast-return':
+                begin
+                    RecordRef.FindLast();
+                    exit(Record as "sal3 Form");
+                end;
+            'record-findset-return':
+                begin
+                    RecordRef.FindSet();
+                    exit(Record as "sal3 Form");
+                end;
+            else
+                Error('Invalid Find "%1".', Type);
+        end;
+    end;
+}
+codeunit 66049 "sal3 Function Record Filter" implements "sal3 Function"
+{
+    procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
+    var
+        Runner: Codeunit "sal3 Runner";
+        RecordCell: Interface "sal3 Form Cell";
+        FieldNameCell: Interface "sal3 Form Cell";
+        FilterCell: Interface "sal3 Form Cell";
+        Record, FieldName, Filter : Interface "sal3 Form";
+    begin
+        RecordCell := Env.Cast(Form, Type);
+        FieldNameCell := Env.Cast(RecordCell.Cdr, Type);
+        FilterCell := Env.Cast(FieldNameCell.Cdr, Type);
+        Env.AssertNilInvalidNoArgs(FilterCell.Cdr, Type); // TODO optional from-to
+
+        Record := Runner.Eval(RecordCell.Car, Env);
+        FieldName := Runner.Eval(FieldNameCell.Car, Env);
+        Filter := Runner.Eval(FilterCell.Car, Env);
+
+        exit(Filter(
+            Env,
+            Env.CastRecord(Record, Type),
+            Env.CastString(FieldName, Type),
+            Filter
+        ));
+    end;
+
+    var
+        Type: Text;
+
+    procedure Init(InType: Text): Codeunit "sal3 Function Record Filter"
+    begin
+        Type := InType;
+        exit(this);
+    end;
+
+    local procedure Filter
+    (
+        Env: Codeunit "sal3 Environment";
+        Record: Interface "sal3 Form Record";
+        FieldName: Interface "sal3 Form String";
+        Filter: Interface "sal3 Form"
+    ): Interface "sal3 Form"
+    var
+        RecordRef: RecordRef;
+        FieldRef: FieldRef;
+    begin
+        RecordRef := Record.Value();
+        FieldRef := RecordRef.Field(
+            Record.FindFieldByName(FieldName.Value)
+        );
+
+        case Type of
+            'record-setrange':
+                FieldRef.SetRange(Filter.Unwrap());
+            'record-setfilter':
+                FieldRef.SetFilter(Env.CastString(Filter, Type).Value);
+            else
+                Error('Invalid Filter "%1".', Type);
+        end;
+
+        exit(Record as "sal3 Form");
     end;
 }
 
-codeunit 66049 "sal3 Function Field Value" implements "sal3 Function"
+codeunit 66050 "sal3 Function Field Value" implements "sal3 Function"
 {
     procedure Eval(Form: Interface "sal3 Form"; Env: Codeunit "sal3 Environment"): Interface "sal3 Form"
     var
